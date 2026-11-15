@@ -33,19 +33,20 @@ public final class Http3Support {
                                                            String host, int port, String pemDirectory, int maxSessions) {
         if (maxSessions <= 0 || maxSessions > 4096)
             throw new IllegalArgumentException("QUIC session limit must be between 1 and 4096");
-        if (tls == null || host == null || host.trim().isEmpty() || port <= 0 || port > 65535)
-            throw new IllegalArgumentException("HTTP/3 requires TLS, an explicit bind host and a valid UDP port");
+        if (tls == null || host == null || host.trim().isEmpty() || port <= 0 || port > 65535 ||
+            pemDirectory == null || pemDirectory.trim().isEmpty())
+            throw new IllegalArgumentException("HTTP/3 requires TLS, an explicit bind host, UDP port and private PEM directory");
         try {
             ClassLoader loader = Http3Support.class.getClassLoader();
             Class<?> configurationType = Class.forName("org.eclipse.jetty.quic.server.ServerQuicConfiguration", true, loader);
             Class<?> factoryType = Class.forName("org.eclipse.jetty.http3.server.HTTP3ServerConnectionFactory", true, loader);
             Class<?> connectorType = Class.forName("org.eclipse.jetty.quic.server.QuicServerConnector", true, loader);
             Class<?> sessionType = Class.forName("org.eclipse.jetty.quic.common.QuicSession", true, loader);
-            for (Class<?> type : new Class<?>[] {configurationType, factoryType, connectorType, sessionType}) {
+            Class<?> secureConnectorType = Class.forName("net.i2p.jetty.http3.SecureQuicServerConnector", true, loader);
+            for (Class<?> type : new Class<?>[] {configurationType, factoryType, connectorType, sessionType, secureConnectorType}) {
                 if (!Server.getVersion().equals(type.getPackage().getImplementationVersion()))
                     throw new IllegalStateException("HTTP/3 modules must match Jetty " + Server.getVersion());
             }
-            Class<?> secureConnectorType = Class.forName("net.i2p.jetty.http3.SecureQuicServerConnector", true, loader);
             Path pem = privateDirectory(Path.of(pemDirectory));
             Object quic = configurationType.getConstructor(SslContextFactory.Server.class, Path.class).newInstance(tls, pem);
             configurationType.getMethod("setSessionRecvWindow", int.class).invoke(quic, 1024 * 1024);
