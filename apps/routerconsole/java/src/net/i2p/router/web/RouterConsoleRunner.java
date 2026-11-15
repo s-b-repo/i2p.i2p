@@ -260,15 +260,17 @@ public class RouterConsoleRunner implements RouterApp {
     }
 
     private void stopConsole() {
+        boolean stoppedNormally = false;
         try {
-            if (PluginStarter.pluginsEnabled(_context))
-                (new I2PAppThread(new PluginStopper(_context, _server), "PluginStopper")).start();
             try {
                 if (_server != null)
                     _server.stop();
             } catch (Exception failure) {
                 _context.logManager().getLog(RouterConsoleRunner.class).warn("Console shutdown failed", failure);
             }
+            // Keep plugin services available until accepted HTTP work has drained.
+            if (PluginStarter.pluginsEnabled(_context))
+                (new I2PAppThread(new PluginStopper(_context, _server), "PluginStopper")).start();
             stopAllWebApps();
             if (_mgr != null)
                 _mgr.unregister(_navHelper);
@@ -283,7 +285,8 @@ public class RouterConsoleRunner implements RouterApp {
                     _jettyTimer = null;
                 }
             }
-        } finally { changeState(STOPPED); }
+            stoppedNormally = _server == null || _server.isStopped();
+        } finally { changeState(stoppedNormally ? STOPPED : ClientAppState.CRASHED); }
     }
 
     /** @since 0.9.4 */
