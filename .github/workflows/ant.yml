@@ -5,6 +5,8 @@ on:
     branches: ['cybersec/webserver-validation-*']
   workflow_dispatch:
   create:
+  pull_request:
+    branches: ['cybersec/webserver-validation-base-*']
 
 permissions:
   contents: read
@@ -15,7 +17,7 @@ concurrency:
 
 jobs:
   live:
-    if: startsWith(github.ref, 'refs/heads/cybersec/webserver-validation-')
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/cybersec/webserver-validation-')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
