@@ -125,7 +125,7 @@ public class JettyStart implements ClientApp {
             if (!found) {
                 File f = new File(path, GZIP_CONFIG);
                 boolean exists = f.exists();
-                if (!exists && !_context.getBaseDir().equals(_context.getConfigDir())) {
+                if (!exists && _context != null && !_context.getBaseDir().equals(_context.getConfigDir())) {
                     // copy jetty-gzip.xml over
                     File from = new File(_context.getBaseDir(), GZIP_DIR);
                     from = new File(from, GZIP_CONFIG);
@@ -195,9 +195,12 @@ public class JettyStart implements ClientApp {
                 if (!lc.isRunning()) {
                     if (lc instanceof Server) {
                         Server server = (Server) lc;
-                        Handler.Wrapper filter = new XI2PLocationFilter();
-                        filter.setHandler(server.getHandler());
-                        server.setHandler(filter);
+                        if (server.getDescendant(XI2PLocationFilter.class) == null) {
+                            Handler.Wrapper filter = new XI2PLocationFilter(
+                                    _context != null ? _context : I2PAppContext.getGlobalContext());
+                            filter.setHandler(server.getHandler());
+                            server.setHandler(filter);
+                        }
                     }
                     try {
                         lc.start();
@@ -208,6 +211,9 @@ public class JettyStart implements ClientApp {
                                 Connector[] connectors = server.getConnectors();
                                 for (int i = 0; i < connectors.length; i++) {
                                     Connector conn = connectors[i];
+                                    // QUIC is direct UDP access, not an I2P streaming tunnel target.
+                                    if (conn.getProtocols().contains("h3"))
+                                        continue;
                                     if (conn instanceof AbstractNetworkConnector) {
                                         AbstractNetworkConnector nconn = (AbstractNetworkConnector) conn;
                                         int port = nconn.getPort();

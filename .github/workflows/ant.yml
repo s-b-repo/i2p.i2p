@@ -1,124 +1,65 @@
-# Mostly copied from https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-ant
-# zlatinb
+name: Web server live acceptance
 
-name: Java CI
-
-on: [push]
+on:
+  push:
+    branches: ['cybersec/webserver-validation-*']
+  workflow_dispatch:
+  create:
+  pull_request:
+    branches: ['cybersec/webserver-validation-base-*']
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
+concurrency:
+  group: webserver-live-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-
+  live:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/cybersec/webserver-validation-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - name: GetText
-        run: sudo apt install gettext
-      - uses: actions/checkout@v4
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          java-version: '17'
-          distribution: 'temurin'
-      - name: Set up IzPack 5
+          persist-credentials: false
+      - name: Select JDK 17
         run: |
-          wget -q -O izpack-installer.jar https://repo1.maven.org/maven2/org/codehaus/izpack/izpack-dist/5.2.4/izpack-dist-5.2.4-installer.jar
-          java -jar izpack-installer.jar -options-auto .github/workflows/auto-install.properties
-      - name : Generate override.properties
+          test -x "$JAVA_HOME_17_X64/bin/javac"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+      - name: Install build tools
         run: |
-          rm -f override.properties
-          echo "build.built-by=GitHub Actions" >> override.properties
-          echo "noExe=true" >> override.properties
-      - name: build with Ant
-        run: ant distclean pkg5
-      - name: Upload installer.jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: I2P-install-${{ github.sha }}.jar
-          path: install.jar
-
-  javadoc-latest:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-      - name: GetText
-        run: sudo apt install gettext
-      - uses: actions/checkout@v4
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-      - name : Generate override.properties
+          sudo apt-get update -qq
+          sudo apt-get install -y ant gettext maven
+      - name: Build the actual distribution
         run: |
-          rm -f override.properties
-          echo "build.built-by=GitHub Actions" >> override.properties
-          echo "noExe=true" >> override.properties
-      - name: test Debian build with Ant
-        run: ant distclean
-      - name: build javadoc with Ant
-        run: ant distclean javadoc updater
-      - name: zip javadoc and place update in javadoc zip
-        run: cp i2pupdate.zip build/javadoc/i2pupdate.zip && zip -r javadoc.zip build/javadoc
-      - name: Upload javadoc.zip
-        uses: actions/upload-artifact@v4
+          mkdir -p tests/results/webserver-stack
+          ant -Dbuild.built-by=Cyber-Sec updaterWithJetty > tests/results/webserver-stack/distribution-build.log 2>&1
+      - name: Exercise controlled security and asynchronous I/O regressions
+        run: python3 tests/scripts/check_webserver_stack.py
+      - name: Resolve the optional native HTTP/3 runtime
+        run: >-
+          mvn -B -q -f tests/fixtures/webserver-stack/http3/pom.xml
+          -DoutputDirectory="$GITHUB_WORKSPACE/tests/results/webserver-stack/http3-jars"
+          dependency:copy-dependencies
+      - name: Run real TCP, TLS, QUIC and packaged applications
+        run: python3 tests/scripts/check_webserver_live.py --package i2pupdate.zip
+      - name: Retain validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: I2P-javadoc-${{ github.sha }}.zip
-          path: javadoc.zip
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+          name: webserver-live-evidence
+          path: |
+            tests/results/webserver-stack/*.json
+            tests/results/webserver-stack/*.log
+          retention-days: 14
+      - name: Retain optional runtime for reproduction
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          # Upload javadocs to github page
-          path: 'build/javadoc'
-      - name: Deploy javadoc and dev build to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-  build-maven:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: GetText
-        run: sudo apt install gettext
-      - uses: actions/checkout@v4
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-      - name : Generate override.properties
-        run: |
-          rm -f override.properties
-          echo "build.built-by=GitHub Actions" >> override.properties
-          echo "noExe=true" >> override.properties
-      - name: build Maven dev build with Ant
-        run: ./installer/resources/maven-dev-release.sh 1
-      - name: Upload servlet-i2p.jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: servlet-i2p-${{ github.sha }}.jar
-          path: pkg-mavencentral/servlet-i2p*.jar
-      - name: Upload streaming.jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: streaming-${{ github.sha }}.jar
-          path: pkg-mavencentral/streaming*.jar
-      - name: Upload mstreaming.jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: mstreaming-${{ github.sha }}.jar
-          path: pkg-mavencentral/mstreaming*.jar
-      - name: Upload router.jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: router-${{ github.sha }}.jar
-          path: pkg-mavencentral/router*.jar
-      - name: Upload i2p.jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: i2p-${{ github.sha }}.jar
-          path: pkg-mavencentral/i2p*.jar
+          name: webserver-http3-runtime
+          path: tests/results/webserver-stack/http3-jars/*.jar
+          if-no-files-found: ignore
+          retention-days: 7

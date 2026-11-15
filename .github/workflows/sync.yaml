@@ -60,7 +60,8 @@ jobs:
           git push origin master
 name: Sync Primary Repository to GitHub Mirror
 "on":
-  push: {}
+  push:
+    branches: [master]
   schedule:
     - cron: 0 0 * * *
   workflow_dispatch: {}
