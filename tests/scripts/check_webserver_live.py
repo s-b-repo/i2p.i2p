@@ -64,6 +64,9 @@ def router_run(work, classpath, certificate, package, optional):
             if not (install / name).resolve().is_relative_to(install):
                 raise RuntimeError("Unexpected package path")
         archive.extractall(install)
+    # An updater archive assumes this installer marker already exists. Without
+    # it WorkingDir falls back to the base directory and skips our test config.
+    shutil.copy2(ROOT / "installer/resources/hosts.txt", install / "hosts.txt")
     for jar in optional.glob("*.jar"):
         shutil.copy2(jar, install / "lib" / jar.name)
     shutil.copytree(ROOT / "installer/resources/eepsite", state / "eepsite")
@@ -98,9 +101,11 @@ def router_run(work, classpath, certificate, package, optional):
         "routerconsole.lang=en", "router.sharePercentage=0", "i2cp.disableInterface=true",
     ]) + "\n")
     (state / "clients.config").write_text("\n".join([
-        "clientApp.0.main=net.i2p.router.web.RouterConsoleRunner", "clientApp.0.startOnLoad=true", "clientApp.0.delay=0",
+        "clientApp.0.main=net.i2p.router.web.RouterConsoleRunner", "clientApp.0.name=Web acceptance console",
+        "clientApp.0.startOnLoad=true", "clientApp.0.delay=0",
         f"clientApp.0.args={console} 127.0.0.1 -s {console_tls} 127.0.0.1 {install / 'webapps'}",
-        "clientApp.1.main=net.i2p.jetty.JettyStart", "clientApp.1.startOnLoad=true", "clientApp.1.delay=0",
+        "clientApp.1.main=net.i2p.jetty.JettyStart", "clientApp.1.name=Web acceptance site",
+        "clientApp.1.startOnLoad=true", "clientApp.1.delay=0",
         "clientApp.1.args=eepsite/live.properties eepsite/jetty.xml eepsite/jetty-ssl.xml eepsite/jetty-http3.xml eepsite/jetty-gzip.xml",
     ]) + "\n")
     (state / "webapps.config").write_text("\n".join([
@@ -110,6 +115,7 @@ def router_run(work, classpath, certificate, package, optional):
     output = work / "router.log"
     command = ["java", "-Xmx384m", "-XX:-UsePerfData", "-Djava.awt.headless=true", "-Djbigi.enable=false",
                "-DI2P_DISABLE_OUTPUT_OVERRIDE=true", "-Di2p.dir.base=" + str(install), "-Di2p.dir.config=" + str(state),
+               "-Drouter.configLocation=" + str(state / "router.config"),
                "-Di2p.dir.temp=" + str(state / "tmp"), "-cp", str(install / "lib/*"), "net.i2p.router.RouterLaunch"]
     checks = []
     def check(ok, label):
