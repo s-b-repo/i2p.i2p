@@ -59,6 +59,7 @@ def router_run(work, classpath, certificate, package, optional):
     install, state = work / "install", work / "state"
     install.mkdir()
     state.mkdir(mode=0o700)
+    (state / "tmp").mkdir(mode=0o700)
     with zipfile.ZipFile(package) as archive:
         for name in archive.namelist():
             if not (install / name).resolve().is_relative_to(install):
@@ -193,17 +194,19 @@ def main():
                                         "-d", str(classes), *map(str, sources)], ROOT)
         optional_sources = sorted((ROOT / "apps/jetty/java/http3-src").rglob("*.java"))
         if report["compilation"]["exit_code"] == 0:
+            adapter_classes = work / "http3-classes"
+            adapter_classes.mkdir()
             report["secure_adapter_compilation"] = invoke(
                 ["javac", "--release", "17", "-encoding", "UTF-8", "-cp", os.pathsep.join([str(classes), dependencies]),
-                 "-d", str(classes), *map(str, optional_sources)], ROOT)
+                 "-d", str(adapter_classes), *map(str, optional_sources)], ROOT)
             if report["secure_adapter_compilation"]["exit_code"] == 0:
                 adapter = args.http3_jars.resolve() / "jetty-http3-i2p.jar"
                 with zipfile.ZipFile(adapter, "w", compression=zipfile.ZIP_DEFLATED) as jar:
                     jar.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nImplementation-Version: 12.0.41\n\n")
                     jar.write(ROOT / "licenses/LICENSE-Apache2.0.txt", "META-INF/LICENSE.txt")
                     jar.write(ROOT / "licenses/LICENSE-Jetty.txt", "META-INF/NOTICE-Jetty.txt")
-                    for item in sorted((classes / "net/i2p/jetty/http3").rglob("*.class")):
-                        jar.write(item, str(item.relative_to(classes)))
+                    for item in sorted((adapter_classes / "net/i2p/jetty/http3").rglob("*.class")):
+                        jar.write(item, str(item.relative_to(adapter_classes)))
                 report["dependencies"][str(adapter)] = hashlib.sha256(adapter.read_bytes()).hexdigest()
         certificate = work / "server.ks"
         report["certificate"] = invoke(["keytool", "-genkeypair", "-keystore", str(certificate), "-storetype", "JKS",
@@ -212,7 +215,7 @@ def main():
                                          "-keyalg", "EC", "-groupname", "secp256r1", "-validity", "1", "-noprompt"], work)
         if (report["compilation"]["exit_code"] == 0 and report["certificate"]["exit_code"] == 0 and
             report.get("secure_adapter_compilation", {}).get("exit_code") == 0):
-            classpath = os.pathsep.join([str(classes), dependencies])
+            classpath = os.pathsep.join([str(classes), str(adapter), dependencies])
             report["protocols"] = invoke(["java", "-Xmx256m", "-XX:-UsePerfData", "-Djbigi.enable=false", "-cp", classpath,
                                            "net.i2p.jetty.LiveWebServerRegression", str(certificate)], work, 90)
             report["passed"] = passed_java(report["protocols"])
