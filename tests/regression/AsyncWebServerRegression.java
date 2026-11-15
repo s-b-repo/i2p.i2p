@@ -311,6 +311,22 @@ public class AsyncWebServerRegression {
             if (heldCallback.get() != null && !server.isStopped()) heldCallback.get().failed(new IOException("test cleanup"));
             server.stop(); server.destroy();
         }
+
+        Server failing = new Server() {
+            protected void doStop() throws Exception {
+                super.doStop();
+                throw new IOException("controlled shutdown failure");
+            }
+        };
+        RouterConsoleRunner broken = new RouterConsoleRunner(context, null, new String[0]);
+        field.set(broken, failing);
+        try {
+            failing.start();
+            broken.shutdown(null);
+            await(() -> broken.getState() == ClientAppState.CRASHED, "failed shutdown reported success");
+            check(failing.isFailed(), "controlled server stop failure is retained");
+            check(broken.getState() != ClientAppState.STOPPED, "failed console shutdown does not report a normal stop");
+        } finally { failing.destroy(); }
     }
 
     private static class AdvertisementConnector extends ServerConnector {
