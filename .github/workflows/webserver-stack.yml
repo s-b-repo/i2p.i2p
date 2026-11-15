@@ -1,0 +1,61 @@
+name: Web server live acceptance
+
+on:
+  push:
+    branches: ['cybersec/webserver-validation-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webserver-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Select JDK 17
+        run: |
+          test -x "$JAVA_HOME_17_X64/bin/javac"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ant gettext maven
+      - name: Build the actual distribution
+        run: |
+          mkdir -p tests/results/webserver-stack
+          ant -Dbuild.built-by=Cyber-Sec updaterWithJetty > tests/results/webserver-stack/distribution-build.log 2>&1
+      - name: Exercise controlled security and asynchronous I/O regressions
+        run: python3 tests/scripts/check_webserver_stack.py
+      - name: Resolve the optional native HTTP/3 runtime
+        run: >-
+          mvn -B -q -f tests/fixtures/webserver-stack/http3/pom.xml
+          -DoutputDirectory="$GITHUB_WORKSPACE/tests/results/webserver-stack/http3-jars"
+          dependency:copy-dependencies
+      - name: Run real TCP, TLS, QUIC and packaged applications
+        run: python3 tests/scripts/check_webserver_live.py --package i2pupdate.zip
+      - name: Retain validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: webserver-live-evidence
+          path: |
+            tests/results/webserver-stack/*.json
+            tests/results/webserver-stack/*.log
+          retention-days: 14
+      - name: Retain optional runtime for reproduction
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: webserver-http3-runtime
+          path: tests/results/webserver-stack/http3-jars/*.jar
+          if-no-files-found: ignore
+          retention-days: 7
