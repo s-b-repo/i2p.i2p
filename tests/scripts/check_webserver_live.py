@@ -93,7 +93,7 @@ def router_run(work, classpath, certificate, package, optional):
     (state / "router.config").write_text("\n".join([
         "router.reseedDisable=true", "i2np.udp.enable=false", "i2np.ntcp.enable=false", "time.disabled=true",
         "routerconsole.browser=none", "router.updatePolicy=notify", "router.enablePlugins=false",
-        "i2np.upnp.enable=false", "routerconsole.newsRefreshFrequency=0",
+        "i2np.upnp.enable=false", "router.newsRefreshFrequency=0",
         "routerconsole.http3.enable=true", "routerconsole.keystorePassword=changeit", "routerconsole.keyPassword=myKeyPassword",
         "routerconsole.lang=en", "router.sharePercentage=0", "i2cp.disableInterface=true",
     ]) + "\n")
